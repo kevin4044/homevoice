@@ -1090,13 +1090,27 @@ func (p *Probe) handleGoodbye(deviceID string, generation uint64, m wire.Goodbye
 	if !p.currentGeneration(deviceID, generation) {
 		return
 	}
+	// Release the UDP session BEFORE clearing probe state. A goodbye with a
+	// stale/wrong session_id must not leave the probe believing audio is gone
+	// while the session manager still holds an orphaned UDP session.
+	if err := p.sessions.Goodbye(deviceID, m.SessionID); err != nil {
+		if errors.Is(err, session.ErrSessionMismatch) || errors.Is(err, session.ErrNoSession) {
+			p.setDeviceError(deviceID, fmt.Errorf("goodbye rejected: %w", err))
+			p.log.Warn("goodbye ignored; audio session unchanged",
+				"device", deviceID, "reason", err.Error())
+			return
+		}
+		p.setDeviceError(deviceID, fmt.Errorf("goodbye failed: %w", err))
+		return
+	}
+	// The session manager has invoked OnSessionEnded for the released session;
+	// the explicit cleanup below is idempotent and keeps the probe mapping in
+	// sync even if the event is missed.
 	p.cancelDeviceTasks(deviceID)
 	p.mu.Lock()
 	st := p.states[deviceID]
-	var sid string
 	var client *devicemcp.Client
 	if st != nil {
-		sid = st.sessionID
 		client = st.mcp
 		st.mcp = nil
 		st.sessionID = ""
@@ -1107,9 +1121,6 @@ func (p *Probe) handleGoodbye(deviceID string, generation uint64, m wire.Goodbye
 	p.mu.Unlock()
 	if client != nil {
 		client.Close()
-	}
-	if sid != "" {
-		_ = p.sessions.Goodbye(deviceID, m.SessionID)
 	}
 }
 
