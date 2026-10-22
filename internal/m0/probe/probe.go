@@ -143,6 +143,7 @@ type deviceState struct {
 	decodeErrors  uint64
 
 	playing        bool
+	playToken      uint64
 	playCancel     context.CancelFunc
 	pipelineCancel context.CancelFunc
 	pipelineBusy   bool
@@ -932,20 +933,16 @@ func (p *Probe) playFrames(ctx context.Context, deviceID string, generation uint
 	}
 	player := st.player
 	playCtx, cancel := context.WithCancel(ctx)
+	st.playToken++
+	token := st.playToken
 	st.playCancel = cancel
 	st.playing = true
 	p.counters.playbackRounds++
 	p.mu.Unlock()
-	defer func() {
-		p.mu.Lock()
-		if st2 := p.states[deviceID]; st2 != nil {
-			st2.playing = false
-			if st2.playCancel != nil {
-				st2.playCancel = nil
-			}
-		}
-		p.mu.Unlock()
-	}()
+	// Only this round's completion may clear the playing state: an aborted or
+	// replaced round can finish after a newer round already started, and must
+	// not clear that newer round's busy flag/cancel function.
+	defer p.finishPlayback(deviceID, token)
 	sink := sinkFunc(func(frame []byte) error {
 		if err := p.sessions.SendAudio(deviceID, frame); err != nil {
 			return err
@@ -1035,6 +1032,20 @@ func (p *Probe) cancelDeviceTasks(deviceID string) {
 			c()
 		}
 	}
+}
+
+// finishPlayback clears a playback round's busy state only when its token is
+// still current. Round tokens are monotonic per device, so a superseded round's
+// deferred completion cannot clear a newer round.
+func (p *Probe) finishPlayback(deviceID string, token uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st := p.states[deviceID]
+	if st == nil || st.playToken != token {
+		return
+	}
+	st.playing = false
+	st.playCancel = nil
 }
 
 func (p *Probe) cancelPlayback(deviceID string) {
