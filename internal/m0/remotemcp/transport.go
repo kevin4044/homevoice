@@ -104,15 +104,12 @@ func (c *Client) do(ctx context.Context, method string, params any, wantResponse
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return nil, nil, transportError(ctx, reqCtx, err)
-	}
-	if len(respBody) > maxResponseBytes {
-		return nil, nil, fmt.Errorf("%w: response %d > %d bytes", ErrTooLarge, len(respBody), maxResponseBytes)
-	}
-	if err := httpStatusError(resp, respBody); err != nil {
-		return nil, nil, err
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+		if readErr != nil {
+			return nil, nil, transportError(ctx, reqCtx, readErr)
+		}
+		return nil, nil, httpStatusError(resp, errBody)
 	}
 	if !wantResponse {
 		return nil, resp.Header, nil
@@ -120,15 +117,32 @@ func (c *Client) do(ctx context.Context, method string, params any, wantResponse
 
 	switch mediaType := mediaTypeOf(resp.Header); mediaType {
 	case "text/event-stream":
-		result, err := parseSSEResponse(respBody, id)
-		if err != nil {
-			return nil, nil, err
+		// Parse incrementally and return on the first complete matching event;
+		// a Streamable HTTP SSE response may stay open after the response.
+		result, sseErr := parseSSEStream(reqCtx, resp.Body, id)
+		if sseErr != nil {
+			var readErr *sseReadError
+			if errors.As(sseErr, &readErr) {
+				return nil, nil, transportError(ctx, reqCtx, readErr.err)
+			}
+			if reqCtx.Err() != nil ||
+				errors.Is(sseErr, context.Canceled) || errors.Is(sseErr, context.DeadlineExceeded) {
+				return nil, nil, transportError(ctx, reqCtx, sseErr)
+			}
+			return nil, nil, sseErr
 		}
 		return result, resp.Header, nil
 	case "application/json":
-		result, err := parseJSONResponse(respBody, id)
-		if err != nil {
-			return nil, nil, err
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+		if readErr != nil {
+			return nil, nil, transportError(ctx, reqCtx, readErr)
+		}
+		if len(respBody) > maxResponseBytes {
+			return nil, nil, fmt.Errorf("%w: response %d > %d bytes", ErrTooLarge, len(respBody), maxResponseBytes)
+		}
+		result, parseErr := parseJSONResponse(respBody, id)
+		if parseErr != nil {
+			return nil, nil, parseErr
 		}
 		return result, resp.Header, nil
 	case "":
@@ -233,13 +247,23 @@ func parseJSONResponse(body []byte, id int64) (json.RawMessage, error) {
 	return result, nil
 }
 
-// parseSSEResponse parses one or more server-sent data events and returns the
-// JSON-RPC response matching id. Bounded by maxSSEEvents.
-func parseSSEResponse(body []byte, id int64) (json.RawMessage, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(body))
-	scanner.Buffer(make([]byte, 0, 4096), maxResponseBytes)
+// sseReadError marks a transport read failure from a streaming SSE body so the
+// caller can classify it as a network/timeout error instead of a protocol error.
+type sseReadError struct{ err error }
+
+func (e *sseReadError) Error() string { return e.err.Error() }
+func (e *sseReadError) Unwrap() error { return e.err }
+
+// parseSSEStream incrementally parses server-sent data events until the
+// JSON-RPC response matching id is complete. It returns as soon as a complete
+// matching event (terminated by a blank line) has been consumed; it does not
+// wait for the server to close a streaming response. Total bytes and event
+// count stay bounded, and ctx cancellation/deadline unblocks a held stream.
+func parseSSEStream(ctx context.Context, body io.Reader, id int64) (json.RawMessage, error) {
+	reader := bufio.NewReaderSize(body, 4096)
 	var data []byte
 	events := 0
+	total := 0
 
 	dispatch := func() (json.RawMessage, error, bool) {
 		if len(data) == 0 {
@@ -259,13 +283,28 @@ func parseSSEResponse(body []byte, id int64) (json.RawMessage, error) {
 		return result, nil, true
 	}
 
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		line, readErr := reader.ReadString('\n')
+		total += len(line)
+		if total > maxResponseBytes {
+			return nil, fmt.Errorf("%w: SSE response exceeds %d bytes", ErrTooLarge, maxResponseBytes)
+		}
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
 		if line == "" {
 			if result, err, found := dispatch(); found {
 				return result, err
 			}
 			data = data[:0]
+			if readErr != nil {
+				if errors.Is(readErr, io.EOF) {
+					return nil, fmt.Errorf("%w: no JSON-RPC response for id %d in event stream", ErrProtocol, id)
+				}
+				return nil, &sseReadError{err: readErr}
+			}
 			continue
 		}
 		if strings.HasPrefix(line, "data:") {
@@ -276,15 +315,16 @@ func parseSSEResponse(body []byte, id int64) (json.RawMessage, error) {
 			}
 			data = append(data, value...)
 		}
-		// event:, id:, retry: and comment lines are not JSON-RPC payloads.
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				if result, err, found := dispatch(); found {
+					return result, err
+				}
+				return nil, fmt.Errorf("%w: no JSON-RPC response for id %d in event stream", ErrProtocol, id)
+			}
+			return nil, &sseReadError{err: readErr}
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("%w: read event stream: %v", ErrProtocol, err)
-	}
-	if result, err, found := dispatch(); found {
-		return result, err
-	}
-	return nil, fmt.Errorf("%w: no JSON-RPC response for id %d in event stream", ErrProtocol, id)
 }
 
 // extractResponse looks for the JSON-RPC response for id in one JSON value
