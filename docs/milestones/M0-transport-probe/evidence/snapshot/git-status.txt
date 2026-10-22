@@ -2,4 +2,3 @@
  M docs/milestones/M0-transport-probe/evidence/offline-report.md
  M docs/milestones/M0-transport-probe/evidence/snapshot/git-head.txt
  M docs/milestones/M0-transport-probe/evidence/snapshot/git-status.txt
-?? docs/milestones/M0-transport-probe/evidence/acceptance-fix-handoff.md

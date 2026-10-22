@@ -1,7 +1,7 @@
 # M0 offline verification evidence
 
 - Specification: `M0-v0.1` (docs/milestones/M0-transport-probe)
-- Generated: 2026-10-22T11:37:58Z
+- Generated: 2026-10-22T11:46:30Z
 - Overall: **OFFLINE VERIFICATION PASSED (implementation candidate only; M0 acceptance still requires authorized live and hardware verification)**
 
 > This report is offline-only. Cloud (L01-L03) and real-device (H01-H06) verification were **not executed** and are reported BLOCKED below. It is not an M0 acceptance decision; independent verification and the specification referee decide.
@@ -11,8 +11,8 @@
 | Field | Value |
 |---|---|
 | Branch | `feature/m0-transport-probe` |
-| HEAD commit | `94e710a8b076474e42037b9830a7dfac1d9e2dca` |
-| Working tree | dirty (uncommitted candidate; no commit/push authorized) |
+| HEAD commit | `529c78a628035e88df76cc0f8a1d7049bb4a0c4e` |
+| Working tree | clean |
 | Go | `go1.27.1` (darwin/arm64, CGO=1) |
 | libopus | `libopus 1.6.1` |
 
