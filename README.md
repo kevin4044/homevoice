@@ -14,7 +14,7 @@
 
 ## 技术方向
 
-Go 模块化单体后端、React + TypeScript 前端、SQLite 存储。初期采用 HTTPS/WSS，家庭 HA 不直接暴露公网。具体依赖与固件兼容性在 M0 验证后确定。
+Go 模块化单体后端、React + TypeScript 前端、SQLite 存储。设备仅采用 MQTT 控制面与 UDP 音频，保留 Idle notify 能力；设备 WebSocket 路线延后。HTTPS 用于配置、通知音频和 OTA，家庭 HA 不直接暴露公网。具体依赖、MQTT TLS/UDP 安全方案与固件兼容性在 M0 验证后确定。
 
 不建设通用 AI 平台，不引入飞书等消息渠道、编程 Agent、多租户或海量厂商配置。
 
@@ -25,5 +25,6 @@ Go 模块化单体后端、React + TypeScript 前端、SQLite 存储。初期采
 - [架构与安全边界](docs/architecture.md)
 - [协作与知识边界原则](docs/governance/agent-principles.md)
 - [里程碑交接与验收流程](docs/governance/milestone-workflow.md)
+- [M0 MQTT + UDP 规格与交接包](docs/milestones/M0-transport-probe/README.md)
 
-下一阶段是 M0：验证真实设备协议、Go 音频链路、模型工具调用与 MCP 接入。本仓库初始化不构成 M0 的执行授权。
+当前已准备 M0 规格草案：验证真实设备 MQTT + UDP 协议、Go 音频链路、Idle 通知、模型工具调用与 MCP 接入。尚未实施探针；编码与真实测试需要按交接包批准授权。

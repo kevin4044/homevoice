@@ -1,0 +1,17 @@
+ M Makefile
+ M cmd/m0probe/main.go
+ M docs/milestones/M0-transport-probe/evidence/README.md
+ M docs/milestones/M0-transport-probe/evidence/acceptance-fix-handoff.md
+ M docs/milestones/M0-transport-probe/evidence/offline-report.json
+ M docs/milestones/M0-transport-probe/evidence/offline-report.md
+ M docs/milestones/M0-transport-probe/evidence/snapshot/git-head.txt
+ M docs/milestones/M0-transport-probe/evidence/snapshot/git-status.txt
+ M docs/milestones/M0-transport-probe/evidence/snapshot/sha256.txt
+ M docs/milestones/M0-transport-probe/evidence/usage.md
+ M docs/milestones/M0-transport-probe/homevoice-m0-acceptance-4152a4c.md
+ M internal/m0/report/report.go
+ M internal/m0/report/report_test.go
+?? docs/milestones/M0-transport-probe/evidence/history/
+?? docs/milestones/M0-transport-probe/evidence/reconciliation.md
+?? docs/milestones/M0-transport-probe/evidence/report-tool-verification/
+?? docs/milestones/M0-transport-probe/homevoice-m0-acceptance-4421991.md

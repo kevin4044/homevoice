@@ -1,0 +1,114 @@
+{
+  "fixture_version": "M0-v0.1",
+  "purpose": "合成 MQTT JSON 与设备 MCP 输入，不是固件报文捕获；demo 工具名不是实际固件工具名",
+  "messages": [
+    {
+      "id": "hello-a",
+      "direction": "device_to_server",
+      "body": {
+        "type": "hello",
+        "version": 3,
+        "transport": "udp",
+        "features": {"mcp": true},
+        "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60}
+      }
+    },
+    {
+      "id": "manual-start",
+      "direction": "device_to_server",
+      "body": {"type": "listen", "state": "start", "mode": "manual"}
+    },
+    {
+      "id": "listen-stop",
+      "direction": "device_to_server",
+      "body": {"type": "listen", "state": "stop"}
+    },
+    {
+      "id": "abort-playback",
+      "direction": "device_to_server",
+      "body": {"type": "abort", "reason": "wake_word_detected"}
+    },
+    {
+      "id": "audio-goodbye",
+      "direction": "device_to_server",
+      "body": {"type": "goodbye", "session_id": "synthetic-session-a"}
+    },
+    {
+      "id": "tts-start",
+      "direction": "server_to_device",
+      "body": {"type": "tts", "state": "start", "session_id": "synthetic-session-a"}
+    },
+    {
+      "id": "tts-stop",
+      "direction": "server_to_device",
+      "body": {"type": "tts", "state": "stop", "session_id": "synthetic-session-a"}
+    },
+    {
+      "id": "idle-notify",
+      "direction": "server_to_device",
+      "body": {"type": "notify", "text": "Homevoice 测试通知", "audio_url": "https://test-audio.invalid/notice.wav"}
+    },
+    {
+      "id": "mcp-initialize",
+      "direction": "server_to_device",
+      "body": {
+        "type": "mcp",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "homevoice-m0", "version": "0.1.0"}
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp-list-request",
+      "direction": "server_to_device",
+      "body": {"type": "mcp", "payload": {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}}
+    },
+    {
+      "id": "mcp-list-response",
+      "direction": "device_to_server",
+      "body": {
+        "type": "mcp",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": {
+            "tools": [
+              {
+                "name": "demo.speaker.set_volume",
+                "description": "合成测试工具",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": {"volume": {"type": "integer", "minimum": 0, "maximum": 30}},
+                  "required": ["volume"],
+                  "additionalProperties": false
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp-volume-call",
+      "direction": "server_to_device",
+      "body": {"type": "mcp", "payload": {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "demo.speaker.set_volume", "arguments": {"volume": 20}}}}
+    },
+    {
+      "id": "mcp-tool-error",
+      "direction": "device_to_server",
+      "body": {"type": "mcp", "payload": {"jsonrpc": "2.0", "id": 3, "result": {"isError": true, "content": [{"type": "text", "text": "合成执行失败"}]}}}
+    },
+    {
+      "id": "spoofed-device-id",
+      "direction": "device_to_server",
+      "body": {"type": "listen", "state": "start", "mode": "manual", "device_id": "test-device-b"}
+    }
+  ]
+}
