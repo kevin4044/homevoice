@@ -205,6 +205,7 @@ type Client struct {
 
 	mu           sync.Mutex
 	nextID       int64
+	idSource     func() int64
 	pending      map[int64]*pending
 	timeout      time.Duration
 	closed       bool
@@ -228,6 +229,17 @@ type outcome struct {
 // logger discards log records. The default request timeout is
 // limits.MCPRequestTimeout.
 func New(id Identity, sender Sender, clk clock.Clock, logger *slog.Logger) *Client {
+	return NewWithIDSource(id, sender, clk, logger, nil)
+}
+
+// NewWithIDSource creates a client whose JSON-RPC request ids come from
+// idSource instead of the client-local counter. The probe uses one
+// monotonically increasing source per device so ids remain unique across UDP
+// audio-session rotations: a late response from a rotated session can therefore
+// never match a request issued by the replacement session. idSource must be
+// concurrency-safe, strictly increasing and return positive ids; nil keeps the
+// default per-client counter.
+func NewWithIDSource(id Identity, sender Sender, clk clock.Clock, logger *slog.Logger, idSource func() int64) *Client {
 	if clk == nil {
 		clk = clock.Real{}
 	}
@@ -239,6 +251,7 @@ func New(id Identity, sender Sender, clk clock.Clock, logger *slog.Logger) *Clie
 		sender:   sender,
 		clk:      clk,
 		logger:   logger,
+		idSource: idSource,
 		pending:  make(map[int64]*pending),
 		nextID:   1, // unique, increasing JSON-RPC ids within the session
 		timeout:  limits.MCPRequestTimeout,
@@ -524,8 +537,21 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 		c.mu.Unlock()
 		return nil, fmt.Errorf("%w: nil sender", ErrInvalidRequest)
 	}
-	id := c.nextID
-	c.nextID++
+	var id int64
+	if c.idSource != nil {
+		id = c.idSource()
+		if id <= 0 {
+			c.mu.Unlock()
+			return nil, fmt.Errorf("%w: id source returned non-positive id %d", ErrInvalidRequest, id)
+		}
+	} else {
+		id = c.nextID
+		c.nextID++
+	}
+	if _, duplicate := c.pending[id]; duplicate {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("%w: duplicate pending request id %d", ErrInvalidRequest, id)
+	}
 	p := &pending{identity: c.identity, ch: make(chan outcome, 1)}
 	c.pending[id] = p
 	timeout := c.timeout

@@ -39,12 +39,13 @@ func (l *lockedBuffer) String() string {
 
 // harness runs one isolated probe with simulated devices on loopback.
 type harness struct {
-	t       *testing.T
-	cfg     *config.Config
-	probe   *probe.Probe
-	logs    *lockedBuffer
-	red     *logging.Redactor
-	devices map[string]*simulator.Device
+	t             *testing.T
+	cfg           *config.Config
+	probe         *probe.Probe
+	logs          *lockedBuffer
+	red           *logging.Redactor
+	devices       map[string]*simulator.Device
+	deviceMutator func(deviceID string, opts *simulator.DeviceOptions)
 }
 
 func fastPlayback() probe.PlaybackOptions {
@@ -58,6 +59,10 @@ func fastPlayback() probe.PlaybackOptions {
 }
 
 func newHarness(t *testing.T, mutate func(*config.Config), mutateProbe func(*probe.Options)) *harness {
+	return newHarnessWithDeviceMutator(t, mutate, mutateProbe, nil)
+}
+
+func newHarnessWithDeviceMutator(t *testing.T, mutate func(*config.Config), mutateProbe func(*probe.Options), deviceMutator func(deviceID string, opts *simulator.DeviceOptions)) *harness {
 	t.Helper()
 	cfg := config.DefaultOffline()
 	if mutate != nil {
@@ -86,7 +91,7 @@ func newHarness(t *testing.T, mutate func(*config.Config), mutateProbe func(*pro
 	if err := p.Start(); err != nil {
 		t.Fatalf("probe.Start: %v", err)
 	}
-	h := &harness{t: t, cfg: cfg, probe: p, logs: logs, red: red, devices: map[string]*simulator.Device{}}
+	h := &harness{t: t, cfg: cfg, probe: p, logs: logs, red: red, devices: map[string]*simulator.Device{}, deviceMutator: deviceMutator}
 	t.Cleanup(func() {
 		for _, d := range h.devices {
 			_ = d.Close()
@@ -105,10 +110,14 @@ func (h *harness) connect(deviceID string) *simulator.Device {
 	if !ok {
 		h.t.Fatalf("unknown device %q", deviceID)
 	}
-	d, err := simulator.NewDevice(devCfg, simulator.DeviceOptions{
+	opts := simulator.DeviceOptions{
 		Logger:    logging.Discard(),
 		MCPServer: simulator.DefaultMCPServer(),
-	})
+	}
+	if h.deviceMutator != nil {
+		h.deviceMutator(deviceID, &opts)
+	}
+	d, err := simulator.NewDevice(devCfg, opts)
 	if err != nil {
 		h.t.Fatalf("simulator.NewDevice(%s): %v", deviceID, err)
 	}

@@ -47,6 +47,10 @@ type MCPOptions struct {
 	ToolsError bool
 	// ToolNames overrides the tool set (tests for unsupported/extra tools).
 	ToolNames []string
+	// BeforeRespond is called synchronously at the start of each request
+	// (before the response is produced). Tests use it to hold an older
+	// response and exercise late-response correlation.
+	BeforeRespond func(method string)
 }
 
 // MCPServer is a minimal synthetic device MCP server speaking JSON-RPC 2.0
@@ -170,6 +174,9 @@ func (s *MCPServer) Handle(payload []byte) (resp json.RawMessage, ok bool) {
 	}
 	if req.JSONRPC != "2.0" {
 		return rpcError(req.ID, -32600, "unsupported jsonrpc version", true)
+	}
+	if s.opts.BeforeRespond != nil {
+		s.opts.BeforeRespond(req.Method)
 	}
 	switch req.Method {
 	case "initialize":

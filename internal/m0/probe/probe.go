@@ -17,6 +17,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/homevoice/homevoice/internal/m0/agent"
@@ -125,6 +126,9 @@ type deviceState struct {
 	mcp     *devicemcp.Client
 	tools   []devicemcp.Tool
 	binding *agent.ToolBinding
+	// mcpID remains allocated for the device lifetime so JSON-RPC request ids
+	// stay unique across UDP session rotations/generations.
+	mcpID *atomic.Int64
 
 	player  *playout.Player
 	decoder *audio.Decoder
@@ -307,7 +311,7 @@ func New(opts Options) (*Probe, error) {
 			transport.Close()
 			return nil, fmt.Errorf("probe: player for %s: %w", d.DeviceID, err)
 		}
-		p.states[d.DeviceID] = &deviceState{deviceID: d.DeviceID, player: player}
+		p.states[d.DeviceID] = &deviceState{deviceID: d.DeviceID, player: player, mcpID: new(atomic.Int64)}
 	}
 	p.mu.Unlock()
 	return p, nil
@@ -684,13 +688,23 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 		return
 	}
 	// New session-bound MCP client. Sender checks the session is still current
-	// so late requests can never be delivered to a rotated session.
-	mcpClient := devicemcp.New(
+	// so late requests can never be delivered to a rotated session. The request
+	// id source is shared for the device lifetime: a late response from the
+	// previous audio session can never match a request id of the new session.
+	p.mu.Lock()
+	idSource := p.states[deviceID].mcpID
+	if idSource == nil {
+		idSource = new(atomic.Int64)
+		p.states[deviceID].mcpID = idSource
+	}
+	p.mu.Unlock()
+	mcpClient := devicemcp.NewWithIDSource(
 		devicemcp.Identity{DeviceID: deviceID, Generation: generation, SessionID: info.SessionID},
 		senderFunc(func(payload json.RawMessage) error {
 			return p.sendMCPForSession(deviceID, generation, info.SessionID, payload)
 		}),
 		p.clk, p.log,
+		func() int64 { return idSource.Add(1) },
 	)
 	resp := wire.HelloResponse{
 		Type:      wire.TypeHello,
@@ -1112,6 +1126,11 @@ func (p *Probe) handleMCP(deviceID string, generation uint64, m wire.MCP) {
 	if client == nil {
 		return
 	}
+	// The MQTT application payload has no session tag, so a response cannot be
+	// labelled with the session that issued its request. Instead, request ids
+	// are monotonic across the device's session rotations (mcpID above), and
+	// the closed client's pending requests were cancelled: an old response id
+	// cannot match any pending id in the replacement client.
 	client.HandleMessage(devicemcp.Envelope{
 		DeviceID:   deviceID,
 		Generation: generation,
