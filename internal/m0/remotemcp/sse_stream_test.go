@@ -193,6 +193,17 @@ func TestA26SSEOversizedEventIsBounded(t *testing.T) {
 	}
 }
 
+// TestParseSSEStreamCapsLineWithoutNewline covers the case where a single
+// chunk has no newline: the size check after ReadString alone would run only
+// after the whole chunk is buffered, so LimitReader must cap allocation.
+func TestParseSSEStreamCapsLineWithoutNewline(t *testing.T) {
+	huge := strings.Repeat("x", maxResponseBytes+4096)
+	_, err := parseSSEStream(context.Background(), strings.NewReader(huge), 1)
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("parseSSEStream error = %v, want ErrTooLarge", err)
+	}
+}
+
 // TestA26SSECancellationIsBounded verifies caller cancellation unblocks a held
 // stream without a matching event.
 func TestA26SSECancellationIsBounded(t *testing.T) {

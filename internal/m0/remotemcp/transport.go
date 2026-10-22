@@ -260,7 +260,11 @@ func (e *sseReadError) Unwrap() error { return e.err }
 // wait for the server to close a streaming response. Total bytes and event
 // count stay bounded, and ctx cancellation/deadline unblocks a held stream.
 func parseSSEStream(ctx context.Context, body io.Reader, id int64) (json.RawMessage, error) {
-	reader := bufio.NewReaderSize(body, 4096)
+	// Cap the underlying stream before buffering a line. ReadString only
+	// checks size after a full line is in memory, so a chunk with no newline
+	// must be truncated by LimitReader or it can allocate past maxResponseBytes.
+	limited := io.LimitReader(body, int64(maxResponseBytes)+1)
+	reader := bufio.NewReaderSize(limited, 4096)
 	var data []byte
 	events := 0
 	total := 0

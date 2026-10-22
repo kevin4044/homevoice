@@ -687,6 +687,7 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 	decoder, err := audio.NewDecoder(audio.UplinkParams())
 	if err != nil {
 		p.setDeviceError(deviceID, err)
+		_ = p.sessions.Goodbye(deviceID, info.SessionID)
 		return
 	}
 	// New session-bound MCP client. Sender checks the session is still current
@@ -708,6 +709,19 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 		p.clk, p.log,
 		func() int64 { return idSource.Add(1) },
 	)
+	// Until the new decoder/MCP client are adopted into device state, any
+	// abort (encode failure, takeover race, generation mismatch) must release
+	// the native Opus decoder, close the unused MCP client, and Goodbye the
+	// UDP session created above. After adoption, session teardown owns them.
+	adopted := false
+	defer func() {
+		if adopted {
+			return
+		}
+		_ = decoder.Close()
+		mcpClient.Close()
+		_ = p.sessions.Goodbye(deviceID, info.SessionID)
+	}()
 	resp := wire.HelloResponse{
 		Type:      wire.TypeHello,
 		Transport: "udp",
@@ -733,7 +747,6 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 	// A newer takeover may have happened while the HELLO was being assembled.
 	// In that case this session must not become the probe's current mapping.
 	if cur, ok := p.broker.Online(deviceID); !ok || cur != generation {
-		_ = p.sessions.Goodbye(deviceID, info.SessionID)
 		p.log.Warn("HELLO superseded during processing", "device", deviceID, "generation", generation)
 		return
 	}
@@ -741,6 +754,7 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 	st = p.states[deviceID]
 	if st == nil || st.generation > generation {
 		p.mu.Unlock()
+		p.log.Warn("HELLO superseded during processing", "device", deviceID, "generation", generation)
 		return
 	}
 	if st.decoder != nil {
@@ -755,6 +769,7 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 	st.pcm = nil
 	st.tools = nil
 	st.binding = nil
+	adopted = true
 	p.mu.Unlock()
 	if oldClient != nil {
 		oldClient.Close()
