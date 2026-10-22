@@ -113,6 +113,28 @@ func TestA25BlockedSenderExitsOnCancel(t *testing.T) {
 	}
 }
 
+// TestA25BlockedSenderExitsOnDeadline verifies the same bounded exit for a
+// request deadline rather than caller cancellation.
+func TestA25BlockedSenderExitsOnDeadline(t *testing.T) {
+	sender := &blockingContextSender{started: make(chan struct{}), canceled: make(chan struct{})}
+	c := newTestClient(t, sender)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := c.CallTool(ctx, "demo.speaker.set_volume", json.RawMessage(`{"volume":20}`))
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("CallTool error = %v, want ErrTimeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("blocked sender wait was not bounded: %s", elapsed)
+	}
+	select {
+	case <-sender.canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("context-aware sender did not observe deadline cancellation")
+	}
+}
+
 // TestA25LegacyBlockedSenderBounded verifies the legacy fallback cannot make
 // the caller wait forever; the sender is released by the test afterwards.
 func TestA25LegacyBlockedSenderBounded(t *testing.T) {

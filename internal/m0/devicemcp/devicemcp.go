@@ -617,10 +617,12 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	if err := c.send(sendCtx, payload); err != nil {
 		cleanup()
 		switch {
-		case ctx.Err() != nil || errors.Is(err, context.Canceled):
+		case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
 			return nil, fmt.Errorf("%w: %v", ErrCanceled, err)
-		case errors.Is(err, context.DeadlineExceeded) || sendCtx.Err() != nil:
+		case errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) || sendCtx.Err() != nil:
 			return nil, fmt.Errorf("%w after %s while sending", ErrTimeout, timeout)
+		case ctx.Err() != nil:
+			return nil, fmt.Errorf("%w: %v", ErrCanceled, err)
 		default:
 			return nil, fmt.Errorf("%w: %v", ErrSend, err)
 		}

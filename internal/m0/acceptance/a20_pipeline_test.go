@@ -142,6 +142,9 @@ func TestA20OldPipelineMustNotClearNewBusy(t *testing.T) {
 			if snap, _ := h.probe.Snapshot("dev-a"); !snap.Busy {
 				t.Fatal("new pipeline is not busy before old completion")
 			}
+			if stats := h.probe.Stats(); stats.PendingTasks == 0 {
+				t.Fatal("pending tasks under-report the running new pipeline")
+			}
 			if _, err := h.probe.Notify("dev-a"); !errors.Is(err, notify.ErrBusy) {
 				t.Fatalf("notify while new pipeline busy = %v, want ErrBusy", err)
 			}
@@ -151,6 +154,9 @@ func TestA20OldPipelineMustNotClearNewBusy(t *testing.T) {
 			time.Sleep(150 * time.Millisecond)
 			if snap, _ := h.probe.Snapshot("dev-a"); !snap.Busy {
 				t.Fatal("old pipeline completion cleared the newer round's busy state")
+			}
+			if stats := h.probe.Stats(); stats.PendingTasks == 0 {
+				t.Fatal("old pipeline completion made PendingTasks under-report the new pipeline")
 			}
 			if _, err := h.probe.Notify("dev-a"); !errors.Is(err, notify.ErrBusy) {
 				t.Fatalf("notify after old completion = %v, want ErrBusy", err)
