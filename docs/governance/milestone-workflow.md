@@ -60,4 +60,4 @@ docs/milestones/M<N>-<name>/
 
 ## 当前下一步
 
-先由规格负责人准备 M0 的具体协议资料、设备能力验证清单与验收包。本轮仓库初始化不启动 M0，也不要求其他 Agent 访问旧项目。
+[M0 交接包](../milestones/M0-transport-probe/README.md)已准备，当前为 MQTT + UDP 规格草案。先批准范围、验收和编码权限，再交给编码负责人；真实硬件与云服务测试单独确认条件。其他 Agent 不访问旧项目。

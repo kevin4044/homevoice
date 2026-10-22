@@ -1,0 +1,45 @@
+{
+  "fixture_version": "M0-v0.1",
+  "purpose": "公开合成密码与帧结构测试；密钥不是生产凭据；明文不是有效 Opus",
+  "verification": "2026-10-22 使用 OpenSSL AES-128-CTR 独立验证 valid-20-byte-payload 的密文",
+  "vectors": [
+    {
+      "id": "valid-20-byte-payload",
+      "key_hex": "00112233445566778899aabbccddeeff",
+      "base_nonce_hex": "01a0aabb11223344deadbeefcafebabe",
+      "header": {
+        "packet_type": 1,
+        "flags": 160,
+        "payload_len": 20,
+        "ssrc": 287454020,
+        "timestamp": 60,
+        "sequence": 1
+      },
+      "header_hex": "01a00014112233440000003c00000001",
+      "plaintext_hex": "00112233445566778899aabbccddeeff00112233",
+      "ciphertext_hex": "c0cd5ad06c57c0901c95f5bc025d6d3f8e59916b",
+      "packet_hex": "01a00014112233440000003c00000001c0cd5ad06c57c0901c95f5bc025d6d3f8e59916b",
+      "expected": "exact_match",
+      "note": "flags=0xa0 只用于模板保留测试；网络会话须匹配自身协商模板"
+    },
+    {
+      "id": "short-header",
+      "packet_hex": "01000000112233440000003c000000",
+      "expected": "packet_too_short"
+    },
+    {
+      "id": "truncated-payload",
+      "key_hex": "00112233445566778899aabbccddeeff",
+      "packet_hex": "01a00014112233440000003c00000001c0cd5ad06c57c0901c95f5bc025d6d3f8e59916",
+      "expected": "length_mismatch"
+    },
+    {
+      "id": "tampered-ciphertext",
+      "key_hex": "00112233445566778899aabbccddeeff",
+      "packet_hex": "01a00014112233440000003c00000001c1cd5ad06c57c0901c95f5bc025d6d3f8e59916b",
+      "expected_plaintext_hex": "01112233445566778899aabbccddeeff00112233",
+      "expected": "decrypts_without_authentication_error",
+      "note": "明确证明 AES-CTR 不提供完整性；不得报告认证成功或防篡改通过"
+    }
+  ]
+}
