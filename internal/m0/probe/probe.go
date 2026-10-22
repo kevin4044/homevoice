@@ -281,6 +281,7 @@ func New(opts Options) (*Probe, error) {
 		ConnectTimeout:         limits.MQTTConnectTimeout,
 		AuthorizedPrivateCIDRs: cfg.Network.AuthorizedPrivateCIDRs,
 		OnMessage:              p.onMQTTMessage,
+		OnOnline:               p.onOnline,
 		OnOffline:              p.onOffline,
 	})
 	if err != nil {
@@ -405,6 +406,12 @@ func (p *Probe) PlayerStats(deviceID string) (playout.Stats, bool) {
 // Online reports the trusted MQTT connection generation for a device.
 func (p *Probe) Online(deviceID string) (uint64, bool) {
 	return p.broker.Online(deviceID)
+}
+
+// UDPManagerCounters exposes aggregate UDP rejection counters for tests and
+// reports. It contains no key material.
+func (p *Probe) UDPManagerCounters() (unknownSSRC, malformed, sourceReject uint64) {
+	return p.sessions.ManagerCounters()
 }
 
 // SessionSnapshot returns the current UDP session snapshot.
@@ -648,9 +655,17 @@ func (p *Probe) onMQTTMessage(msg broker.Message) {
 }
 
 func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello) {
+	// The broker is the source of truth for the live connection generation.
+	// A takeover bumps it before the new connection's HELLO, so accepting on
+	// broker state avoids rejecting a valid new-generation HELLO merely
+	// because the probe still briefly holds older state.
+	if cur, ok := p.broker.Online(deviceID); !ok || cur != generation {
+		p.log.Warn("stale HELLO ignored", "device", deviceID, "generation", generation)
+		return
+	}
 	p.mu.Lock()
 	st := p.states[deviceID]
-	if st == nil || st.generation > generation || (st.online && st.generation != generation) {
+	if st == nil || st.generation > generation {
 		p.mu.Unlock()
 		p.log.Warn("stale HELLO ignored", "device", deviceID, "generation", generation)
 		return
@@ -699,9 +714,16 @@ func (p *Probe) handleHello(deviceID string, generation uint64, hello wire.Hello
 		p.setDeviceError(deviceID, err)
 		return
 	}
+	// A newer takeover may have happened while the HELLO was being assembled.
+	// In that case this session must not become the probe's current mapping.
+	if cur, ok := p.broker.Online(deviceID); !ok || cur != generation {
+		_ = p.sessions.Goodbye(deviceID, info.SessionID)
+		p.log.Warn("HELLO superseded during processing", "device", deviceID, "generation", generation)
+		return
+	}
 	p.mu.Lock()
 	st = p.states[deviceID]
-	if st == nil {
+	if st == nil || st.generation > generation {
 		p.mu.Unlock()
 		return
 	}
@@ -1142,6 +1164,47 @@ func (p *Probe) onSessionEnded(e session.SessionEnd) {
 		client.Close()
 	}
 	p.cancelDeviceTasks(e.DeviceID)
+}
+
+// onOnline follows the broker's authenticated registration/generation bump.
+// For a duplicate-client-id takeover the old generation is dropped here, so a
+// new connection's HELLO is accepted even though its predecessor's probe state
+// is still present. The new MQTT registration itself is never cleared.
+func (p *Probe) onOnline(ev broker.OnlineEvent) {
+	p.mu.Lock()
+	st := p.states[ev.DeviceID]
+	if st == nil {
+		p.mu.Unlock()
+		return
+	}
+	oldLocalGen := st.generation
+	replaced := ev.Replaced || (oldLocalGen != 0 && oldLocalGen != ev.Generation)
+	st.online = true
+	st.generation = ev.Generation
+	var client *devicemcp.Client
+	if replaced {
+		client = st.mcp
+		st.mcp = nil
+		st.sessionID = ""
+		st.tools = nil
+		st.binding = nil
+		st.pipelineBusy = false
+	}
+	p.mu.Unlock()
+	if !replaced {
+		return
+	}
+	oldGen := ev.PreviousGeneration
+	if oldGen == 0 {
+		oldGen = oldLocalGen
+	}
+	if oldGen != 0 {
+		p.sessions.DropGeneration(ev.DeviceID, oldGen)
+	}
+	p.cancelDeviceTasks(ev.DeviceID)
+	if client != nil {
+		client.Close()
+	}
 }
 
 func (p *Probe) onOffline(ev broker.OfflineEvent) {

@@ -47,14 +47,29 @@ type OfflineEvent struct {
 	Reason     string
 }
 
+// OnlineEvent reports a newly registered authenticated MQTT session.
+//
+// Replaced is true when the registration superseded an older connection for
+// the same device (duplicate client-id takeover); PreviousGeneration is that
+// replaced generation. OnOnline is emitted before the new connection starts
+// reading application packets, so a listener that follows it will observe the
+// new generation before HELLO.
+type OnlineEvent struct {
+	DeviceID           string
+	Generation         uint64
+	PreviousGeneration uint64
+	Replaced           bool
+}
+
 // Options configures a Broker.
 //
-// OnMessage and OnOffline are invoked synchronously from broker goroutines
-// (the MQTT connection goroutine and the connection cleanup path
+// OnMessage, OnOnline and OnOffline are invoked synchronously from broker
+// goroutines (the MQTT connection goroutine and the connection cleanup path
 // respectively). They must not block for long and must not call Close.
 // They are always called without Broker locks held, so calling Publish,
 // Online or Disconnect from a callback is safe. OnOffline is not called for a
-// superseded duplicate-client-id connection.
+// superseded duplicate-client-id connection; OnOnline reports the takeover
+// instead.
 type Options struct {
 	// BindAddr is the required host:port listener address. Wildcard and
 	// public binds are rejected by config.ValidateBindAddress; port 0
@@ -96,6 +111,11 @@ type Options struct {
 
 	// OnMessage receives attributed uplink messages.
 	OnMessage func(Message)
+
+	// OnOnline receives each successful authenticated registration, including
+	// duplicate-client-id takeovers. It runs before the new connection's read
+	// loop, so HELLO from the new generation cannot be observed first.
+	OnOnline func(OnlineEvent)
 
 	// OnOffline receives the loss of the currently registered session.
 	OnOffline func(OfflineEvent)
@@ -365,9 +385,13 @@ func (b *Broker) registerSession(cl *mqtt.Client, device config.Device) {
 	b.mu.Lock()
 	old := b.online[device.DeviceID]
 	var superseded *session
+	var previousGeneration uint64
+	replaced := false
 	if old != nil && old.client != cl {
 		b.superseded[old.client] = struct{}{}
 		superseded = old
+		previousGeneration = old.generation
+		replaced = true
 	}
 	b.mu.Unlock()
 
@@ -391,7 +415,16 @@ func (b *Broker) registerSession(cl *mqtt.Client, device config.Device) {
 	b.log.Info("mqtt device online",
 		"device", device.DeviceID,
 		"generation", generation,
+		"replaced", replaced,
 	)
+	if b.opts.OnOnline != nil {
+		b.opts.OnOnline(OnlineEvent{
+			DeviceID:           device.DeviceID,
+			Generation:         generation,
+			PreviousGeneration: previousGeneration,
+			Replaced:           replaced,
+		})
+	}
 }
 
 // waitClientCleanup waits until the library has removed a closed connection
