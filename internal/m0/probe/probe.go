@@ -979,6 +979,15 @@ type senderFunc func(json.RawMessage) error
 
 func (f senderFunc) SendMCP(payload json.RawMessage) error { return f(payload) }
 
+// SendMCPContext lets devicemcp bound a canceled/deadline-expired send before
+// it publishes a side-effecting request.
+func (f senderFunc) SendMCPContext(ctx context.Context, payload json.RawMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f(payload)
+}
+
 type ttsMarkers struct {
 	p          *Probe
 	deviceID   string

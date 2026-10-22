@@ -119,8 +119,19 @@ type Identity struct {
 // Sender sends one JSON-RPC payload as an MQTT application message. The
 // implementation wraps it as {"type":"mcp","payload":...} and publishes it on
 // the authenticated connection's downlink topic.
+//
+// Sender is the legacy synchronous interface. Implementations must not block
+// indefinitely; clients prefer ContextSender when the implementation supports
+// it, which lets a send observe cancellation and deadlines.
 type Sender interface {
 	SendMCP(payload json.RawMessage) error
+}
+
+// ContextSender is the optional context-aware extension of Sender. A client
+// uses it when the sender implements it, so a canceled/failed send can be
+// bounded and cannot be mistaken for a successful publication.
+type ContextSender interface {
+	SendMCPContext(ctx context.Context, payload json.RawMessage) error
 }
 
 // Envelope is one inbound application message together with the trusted
@@ -528,6 +539,10 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// A pre-canceled call must never publish a side-effecting request.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrCanceled, err)
+	}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -588,12 +603,34 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 		return nil, fmt.Errorf("%w: request %d > %d bytes", ErrTooLarge, len(payload), limits.MaxJSONBytes)
 	}
 
-	// Register the timer before sending so the timeout bound holds even for a
-	// sender that blocks, and so tests can advance a fake clock deterministically.
-	timer := c.clk.After(timeout)
-	if err := c.sender.SendMCP(payload); err != nil {
+	// Check cancellation again immediately before publishing: validation and
+	// marshalling may have taken time since the entry check.
+	if err := ctx.Err(); err != nil {
 		cleanup()
-		return nil, fmt.Errorf("%w: %v", ErrSend, err)
+		return nil, fmt.Errorf("%w: %v", ErrCanceled, err)
+	}
+	// Register the response timer before sending so the timeout bound holds
+	// even for a sender that blocks, and so tests can advance a fake clock.
+	timer := c.clk.After(timeout)
+	sendCtx, cancelSend := context.WithTimeout(ctx, timeout)
+	defer cancelSend()
+	if err := c.send(sendCtx, payload); err != nil {
+		cleanup()
+		switch {
+		case ctx.Err() != nil || errors.Is(err, context.Canceled):
+			return nil, fmt.Errorf("%w: %v", ErrCanceled, err)
+		case errors.Is(err, context.DeadlineExceeded) || sendCtx.Err() != nil:
+			return nil, fmt.Errorf("%w after %s while sending", ErrTimeout, timeout)
+		default:
+			return nil, fmt.Errorf("%w: %v", ErrSend, err)
+		}
+	}
+	// A send that succeeded just as the caller canceled is still a published
+	// side effect; report cancellation rather than pretending it never
+	// happened. Do not retry side-effecting requests automatically.
+	if err := ctx.Err(); err != nil {
+		cleanup()
+		return nil, fmt.Errorf("%w: %v", ErrCanceled, err)
 	}
 	select {
 	case out := <-p.ch:
@@ -604,6 +641,24 @@ func (c *Client) call(ctx context.Context, method string, params any) (json.RawM
 	case <-timer:
 		cleanup()
 		return nil, fmt.Errorf("%w after %s", ErrTimeout, timeout)
+	}
+}
+
+// send publishes one payload through a context-aware sender when available.
+// Legacy Sender implementations are invoked in a bounded wait: the caller
+// returns when ctx expires, but such an implementation cannot be force-stopped
+// if it ignores context. Probe senders implement ContextSender.
+func (c *Client) send(ctx context.Context, payload json.RawMessage) error {
+	if cs, ok := c.sender.(ContextSender); ok {
+		return cs.SendMCPContext(ctx, payload)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.sender.SendMCP(payload) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
