@@ -151,12 +151,14 @@ type RunResult struct {
 }
 
 // ToolBinding is the session-bound mapping from the synthetic tool to the
-// discovered device tool.
+// discovered device tool. Enum, when non-empty, is the exact discrete set of
+// allowed values; Minimum/Maximum still provide the model-facing range.
 type ToolBinding struct {
 	DeviceTool string
 	Parameter  string
 	Minimum    int
 	Maximum    int
+	Enum       []int
 }
 
 // Loop is a reusable bounded model tool loop. It is safe to configure while no
@@ -461,6 +463,19 @@ func parseLevel(binding ToolBinding, args json.RawMessage) (int, error) {
 		return 0, fmt.Errorf("%w: level %d outside discovered range [%d, %d]",
 			ErrInvalidArguments, level, binding.Minimum, binding.Maximum)
 	}
+	if len(binding.Enum) > 0 {
+		allowed := false
+		for _, v := range binding.Enum {
+			if v == level {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return 0, fmt.Errorf("%w: level %d is not in the discovered enum %v",
+				ErrInvalidArguments, level, binding.Enum)
+		}
+	}
 	return level, nil
 }
 
@@ -502,8 +517,13 @@ func deriveVolumeBinding(deviceTool string, inputSchema json.RawMessage) (ToolBi
 	for _, name := range root.Required {
 		if name == parameter {
 			required = true
-			break
+			continue
 		}
+		// The synthetic executor only supplies the volume-like parameter. Any
+		// other required property cannot be mapped, so the tool must not be
+		// exposed rather than silently sending an incomplete argument set.
+		return ToolBinding{}, fmt.Errorf("%w: tool %q has unsupported required parameter %q besides %q",
+			ErrUnsupportedSchema, deviceTool, name, parameter)
 	}
 	if !required {
 		return ToolBinding{}, fmt.Errorf("%w: tool %q parameter %q is not required", ErrUnsupportedSchema, deviceTool, parameter)
@@ -515,6 +535,7 @@ func deriveVolumeBinding(deviceTool string, inputSchema json.RawMessage) (ToolBi
 		Maximum          json.RawMessage `json:"maximum"`
 		ExclusiveMinimum json.RawMessage `json:"exclusiveMinimum"`
 		ExclusiveMaximum json.RawMessage `json:"exclusiveMaximum"`
+		Enum             json.RawMessage `json:"enum"`
 	}
 	if err := json.Unmarshal(root.Properties[parameter], &property); err != nil || property.Type != "integer" {
 		return ToolBinding{}, fmt.Errorf("%w: tool %q parameter %q is not an integer", ErrUnsupportedSchema, deviceTool, parameter)
@@ -533,7 +554,46 @@ func deriveVolumeBinding(deviceTool string, inputSchema json.RawMessage) (ToolBi
 	if minimum > maximum {
 		return ToolBinding{}, fmt.Errorf("%w: tool %q parameter %q has minimum > maximum", ErrUnsupportedSchema, deviceTool, parameter)
 	}
-	return ToolBinding{DeviceTool: deviceTool, Parameter: parameter, Minimum: minimum, Maximum: maximum}, nil
+	enum, err := parseSchemaEnum(property.Enum)
+	if err != nil {
+		return ToolBinding{}, fmt.Errorf("%w: tool %q parameter %q enum: %v", ErrUnsupportedSchema, deviceTool, parameter, err)
+	}
+	for _, v := range enum {
+		if v < minimum || v > maximum {
+			return ToolBinding{}, fmt.Errorf("%w: tool %q parameter %q enum value %d is outside [%d, %d]",
+				ErrUnsupportedSchema, deviceTool, parameter, v, minimum, maximum)
+		}
+	}
+	return ToolBinding{DeviceTool: deviceTool, Parameter: parameter, Minimum: minimum, Maximum: maximum, Enum: enum}, nil
+}
+
+// parseSchemaEnum validates an optional integer enum array. An empty/missing
+// enum means no discrete restriction; malformed or non-integer enums are
+// rejected instead of being silently widened.
+func parseSchemaEnum(raw json.RawMessage) ([]int, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var values []json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, fmt.Errorf("not an array")
+	}
+	if len(values) == 0 {
+		return nil, errors.New("empty enum")
+	}
+	out := make([]int, 0, len(values))
+	seen := make(map[int]bool, len(values))
+	for _, item := range values {
+		value, err := parseSchemaInt(item)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[value] {
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	return out, nil
 }
 
 func parseSchemaInt(raw json.RawMessage) (int, error) {
@@ -559,13 +619,17 @@ func buildSyntheticToolSpec(binding ToolBinding) (json.RawMessage, error) {
 		"description": "Set the volume level of the current authenticated device session.",
 		"inputSchema": map[string]any{
 			"type": "object",
-			"properties": map[string]any{
-				"level": map[string]any{
+			"properties": func() map[string]any {
+				level := map[string]any{
 					"type":    "integer",
 					"minimum": binding.Minimum,
 					"maximum": binding.Maximum,
-				},
-			},
+				}
+				if len(binding.Enum) > 0 {
+					level["enum"] = binding.Enum
+				}
+				return map[string]any{"level": level}
+			}(),
 			"required":             []string{"level"},
 			"additionalProperties": false,
 		},
