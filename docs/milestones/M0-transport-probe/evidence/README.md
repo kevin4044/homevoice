@@ -10,6 +10,7 @@ credentials, device identifiers, keys or private content.
 | `usage.md` | Exact commands, prerequisites, live/hardware config shapes, re-run steps, implementation scope and known gaps. |
 | `compatibility-offline.md` | Per-item compatibility findings: what the offline simulation proves versus what remains hardware/cloud dependent. |
 | `live-report.md` / `hardware-report.md` | Sanitized **BLOCKED** evidence written by the gated authorized entries when no authorization/config exists. |
+| `acceptance-fix-handoff.md` | Independent acceptance defect list. Its Defects 1-3 were fixed in commits `881064f`, `7f9dcba`, `94e710a`; the refreshed A05/A18/A22 evidence below comes from the fixed candidate. |
 
 Acceptance decision is not made here. The specification still records "待批准";
 the specification owner/referee and an independent acceptance agent decide.

@@ -1,14 +1,14 @@
 {
   "spec_version": "M0-v0.1",
   "mode": "offline",
-  "generated_at": "2026-10-22T10:58:05.965217Z",
+  "generated_at": "2026-10-22T11:37:58.249581Z",
   "overall": "OFFLINE VERIFICATION PASSED (implementation candidate only; M0 acceptance still requires authorized live and hardware verification)",
   "metadata": {
     "SpecVersion": "M0-v0.1",
     "Branch": "feature/m0-transport-probe",
-    "Head": "27da5e253277e81c6bd9612e0d21ca21b9098473",
+    "Head": "94e710a8b076474e42037b9830a7dfac1d9e2dca",
     "WorkingTree": "dirty (uncommitted candidate; no commit/push authorized)",
-    "GeneratedAt": "2026-10-22T10:58:05.965217Z",
+    "GeneratedAt": "2026-10-22T11:37:58.249581Z",
     "GoVersion": "go1.27.1",
     "GOOS": "darwin",
     "GOARCH": "arm64",
@@ -109,12 +109,14 @@
       "id": "A05",
       "status": "PASS",
       "tests": [
-        "TestA05DuplicateClientReconnect"
+        "TestA05DuplicateClientReconnect",
+        "TestA05ProbeTakeoverAcceptsNewGeneration"
       ],
       "packages": [
+        "github.com/homevoice/homevoice/internal/m0/acceptance",
         "github.com/homevoice/homevoice/internal/m0/broker"
       ],
-      "detail": "1 passing test(s)"
+      "detail": "2 passing test(s)"
     },
     {
       "id": "A06",
@@ -288,12 +290,13 @@
       "id": "A18",
       "status": "PASS",
       "tests": [
-        "TestA18AbortKeepsSessionGoodbyeKeepsMQTTDisconnectClearsBoth"
+        "TestA18AbortKeepsSessionGoodbyeKeepsMQTTDisconnectClearsBoth",
+        "TestA18GoodbyeMismatchPreservesSession"
       ],
       "packages": [
         "github.com/homevoice/homevoice/internal/m0/acceptance"
       ],
-      "detail": "1 passing test(s)"
+      "detail": "2 passing test(s)"
     },
     {
       "id": "A19",
@@ -345,13 +348,15 @@
       "tests": [
         "TestA22CancelFailsPendingAndLateResponseIgnored",
         "TestA22IdentityCorrelation",
+        "TestA22ProbeSessionRotationIgnoresLateMCPResponse",
         "TestA22SameRequestIDOnTwoDevicesDoesNotCross",
         "TestA22TimeoutLateResponseAndDuplicateIgnored"
       ],
       "packages": [
+        "github.com/homevoice/homevoice/internal/m0/acceptance",
         "github.com/homevoice/homevoice/internal/m0/devicemcp"
       ],
-      "detail": "4 passing test(s)"
+      "detail": "5 passing test(s)"
     },
     {
       "id": "A23",

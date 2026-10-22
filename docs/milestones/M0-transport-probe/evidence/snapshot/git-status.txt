@@ -1,12 +1,5 @@
- M .gitignore
- M AGENTS.md
- M README.md
- M docs/architecture.md
- M docs/governance/milestone-workflow.md
- M docs/roadmap.md
-?? Makefile
-?? cmd/
-?? docs/milestones/
-?? go.mod
-?? go.sum
-?? internal/
+ M docs/milestones/M0-transport-probe/evidence/offline-report.json
+ M docs/milestones/M0-transport-probe/evidence/offline-report.md
+ M docs/milestones/M0-transport-probe/evidence/snapshot/git-head.txt
+ M docs/milestones/M0-transport-probe/evidence/snapshot/git-status.txt
+?? docs/milestones/M0-transport-probe/evidence/acceptance-fix-handoff.md
