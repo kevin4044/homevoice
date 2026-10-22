@@ -19,3 +19,8 @@
 /dist/
 /coverage/
 node_modules/
+
+# M0 probe local build caches / sensitive test outputs
+/.cache/
+/local/
+/docs/milestones/M0-transport-probe/evidence/raw/
