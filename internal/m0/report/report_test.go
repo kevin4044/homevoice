@@ -43,7 +43,7 @@ func baseMeta() Metadata {
 	return Metadata{
 		Branch:                "feature/m0-transport-probe",
 		Head:                  "27da5e2",
-		WorkingTree:           "dirty (uncommitted candidate; no commit/push authorized)",
+		WorkingTree:           "dirty (uncommitted changes; see snapshot/git-status.txt)",
 		GeneratedAt:           time.Date(2026, 10, 22, 1, 2, 3, 0, time.UTC),
 		GoVersion:             "go1.x",
 		GOOS:                  "darwin",
@@ -109,6 +109,46 @@ func TestBuildPassingReport(t *testing.T) {
 	}
 	if decoded.Overall != rep.Overall {
 		t.Fatalf("JSON overall = %q", decoded.Overall)
+	}
+}
+
+func TestReportCandidateProvenance(t *testing.T) {
+	for _, tc := range []struct {
+		status string
+		want   string
+	}{
+		{"clean", "committed HEAD shown above with a clean worktree"},
+		{"dirty (uncommitted changes)", "not evidence for that commit alone"},
+		{"unknown", "cannot establish a clean fixed candidate"},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			meta := baseMeta()
+			meta.WorkingTree = tc.status
+			rep, err := Build(allPassingEvents(), meta)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var md, js bytes.Buffer
+			if err := rep.WriteMarkdown(&md); err != nil {
+				t.Fatal(err)
+			}
+			if err := rep.WriteJSON(&js); err != nil {
+				t.Fatal(err)
+			}
+			for _, output := range []string{md.String(), js.String()} {
+				if !strings.Contains(output, tc.want) {
+					t.Fatalf("report missing provenance %q", tc.want)
+				}
+				for _, stale := range []string{"no commit/push authorized", "candidate is the uncommitted working tree"} {
+					if strings.Contains(output, stale) {
+						t.Fatalf("report contains stale assertion %q", stale)
+					}
+				}
+				if !strings.Contains(output, "send goroutine cannot be forcibly stopped") {
+					t.Fatal("report lost legacy sender limitation")
+				}
+			}
+		})
 	}
 }
 

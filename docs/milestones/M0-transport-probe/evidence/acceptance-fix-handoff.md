@@ -1,5 +1,9 @@
 # M0 independent acceptance → fix handoff
 
+This is a historical defect handoff from the earlier acceptance round. It is
+retained for audit history and is superseded by the refreshed offline evidence
+for fixed HEAD `4421991`; it does not describe the current candidate result.
+
 **Role of this document:** actionable defect list for a fix agent.  
 **Not** a milestone pass/fail by the referee. Do not lower acceptance criteria.
 

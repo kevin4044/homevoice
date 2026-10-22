@@ -1,22 +1,24 @@
 # M0 offline verification evidence
 
 - Specification: `M0-v0.1` (docs/milestones/M0-transport-probe)
-- Generated: 2026-10-22T12:59:30Z
+- Generated: 2026-10-22T13:16:51Z
 - Overall: **OFFLINE VERIFICATION PASSED (implementation candidate only; M0 acceptance still requires authorized live and hardware verification)**
 
 > This report is offline-only. Cloud (L01-L03) and real-device (H01-H06) verification were **not executed** and are reported BLOCKED below. It is not an M0 acceptance decision; independent verification and the specification referee decide.
+
+> Evidence reconciliation (2026-10-22): this is an editorially corrected copy of the earlier independent run, not a new execution. Original reports and their snapshot are retained in [history/4421991-independent/](history/4421991-independent/). See [reconciliation.md](reconciliation.md) for provenance, hashes and the separate uncommitted report-tool verification.
 
 ## Candidate
 
 | Field | Value |
 |---|---|
 | Branch | `feature/m0-transport-probe` |
-| HEAD commit | `460626c0105c05389fe99eb57f68b3365ae2a81f` |
-| Working tree | dirty (uncommitted candidate; no commit/push authorized) |
+| HEAD commit | `442199166be14df64d43b56d38b01fcddbffcf61` |
+| Working tree | clean |
 | Go | `go1.27.1` (darwin/arm64, CGO=1) |
 | libopus | `libopus 1.6.1` |
 
-Approval note: the specification package still records status "待批准" (pending approval) in its README/spec/acceptance/handoff. The offline implementation was authorized by the user's direct instruction in this session; the specification owner/referee must confirm approval. No commit/push/PR was made, so this report describes the uncommitted working tree and its snapshot.
+Approval note: the specification package still records status "待批准" (pending approval) in its README/spec/acceptance/handoff. The specification owner/referee must confirm approval. This independent run recorded committed HEAD 442199166be14df64d43b56d38b01fcddbffcf61 and a clean worktree. Its stale uncommitted-candidate boilerplate was corrected during evidence reconciliation; no test results or recorded run metadata were changed. This evidence does not authorize live/hardware operations, Git publication, deployment or OTA.
 
 ## Dependencies (locked in go.sum)
 
@@ -134,8 +136,8 @@ Package licenses (recorded for T0): mochi-mqtt MIT; paho.mqtt.golang EPL-2.0/EDL
 
 ## Known issues / open decisions
 
-- The specification package still records status "pending approval" (待批准) in README/spec/acceptance/handoff. This coding run was authorized by the user's direct offline-implementation instruction; approval must be confirmed by the specification owner/referee and is not self-declared here.
-- No commit/push/PR was authorized, so the candidate is the uncommitted working tree; see snapshot/ for HEAD, branch, dirty status and file hashes.
+- The specification package still records status "pending approval" (待批准) in README/spec/acceptance/handoff. Approval must be confirmed by the specification owner/referee; the offline report does not self-approve M0.
+- The fixed candidate is the recorded committed HEAD with a clean worktree at the independent run. The original generated reports are retained in history/4421991-independent/; editorial corrections are documented in reconciliation.md.
 - Live cloud, remote MCP endpoint and real hardware were not executed; L01-L03 and H01-H06 remain BLOCKED. Firmware notify, device MCP, TLS, NAT and Opus timing therefore remain assumptions for M1 planning.
 - The authorized live/hardware entry points currently validate authorization/config and then report BLOCKED; their actual L01-L03 / H01-H06 workflows are not implemented or validated in this candidate. They must not be recorded as pass until those workflows are implemented and exercised with authorization.
 - The conditional T4 synthetic HTTPS configuration-distribution endpoint was not implemented because the target firmware configuration channel is unverified. A synthetic loopback HTTPS test-audio server (self-signed, certificate-pinned client) exists in the simulator for offline media tests, but real firmware notification download, media format and HTTPS trust remain untested on hardware.
@@ -143,6 +145,8 @@ Package licenses (recorded for T0): mochi-mqtt MIT; paho.mqtt.golang EPL-2.0/EDL
 - Thresholds such as 150ms settle, 5-frame prebuffer, 2 extra tail frames and 24kHz/60ms downlink are tunable candidates, not verified firmware parameters.
 - The offline report generator enforces A01-A28 presence/pass; package-level tests named TestAxx are the evidence source.
 - Additional sanitized evidence files: evidence/usage.md (commands, config shapes, gaps), evidence/compatibility-offline.md (offline vs hardware/cloud unknowns), evidence/README.md (index) and evidence/snapshot/ (fixed candidate manifest).
+
+- Legacy synchronous MCP senders only bound caller waiting on cancellation/deadline; their underlying send goroutine cannot be forcibly stopped and may continue executing. Context-aware senders support cooperative cancellation. Already published or in-flight side effects can have an unknown outcome and must not be automatically retried.
 
 ## Next steps
 

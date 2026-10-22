@@ -194,10 +194,13 @@ func runOfflineReport(args []string, stdout, stderr io.Writer) int {
 	meta.Branch = gitValue(root, "branch", "--show-current")
 	meta.Head = gitValue(root, "rev-parse", "HEAD")
 	status := gitValue(root, "status", "--porcelain=v1")
-	if status == "" {
+	switch status {
+	case "":
 		meta.WorkingTree = "clean"
-	} else {
-		meta.WorkingTree = "dirty (uncommitted candidate; no commit/push authorized)"
+	case "unknown":
+		meta.WorkingTree = "unknown (git status could not be read)"
+	default:
+		meta.WorkingTree = "dirty (uncommitted changes; see snapshot/git-status.txt)"
 	}
 	meta.Dependencies, err = report.CollectDependencyVersionsFromGoMod(filepath.Join(root, "go.mod"))
 	if err != nil {
@@ -210,7 +213,6 @@ func runOfflineReport(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	meta.Checks = []report.Check(gates)
-	meta.ApprovalNote = "Approval note: the specification package still records status \"待批准\" (pending approval) in its README/spec/acceptance/handoff. The offline implementation was authorized by the user's direct instruction in this session; the specification owner/referee must confirm approval. No commit/push/PR was made, so this report describes the uncommitted working tree and its snapshot."
 	if _, err := config.Load(config.Live, ""); err != nil {
 		meta.LiveBlockedReason = err.Error()
 	}

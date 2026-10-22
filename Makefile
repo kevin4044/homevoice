@@ -90,7 +90,7 @@ snapshot:
 	@find cmd internal -type f \( -name '*.go' -o -name '*.json' \) -print0 \
 		| sort -z \
 		| xargs -0 shasum -a 256 > "$(EVIDENCE)/snapshot/sha256.txt"
-	@echo "candidate snapshot written to $(EVIDENCE)/snapshot (working tree is uncommitted; no push/PR was made)"
+	@echo "candidate snapshot written to $(EVIDENCE)/snapshot (see recorded HEAD, worktree status and hashes)"
 
 clean:
 	@if [ -d "$(CACHE)" ]; then 		chmod -R u+w "$(CACHE)" 2>/dev/null || true; 		rm -rf "$(CACHE)"; 	fi

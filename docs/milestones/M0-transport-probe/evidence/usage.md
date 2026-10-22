@@ -1,8 +1,10 @@
 # M0 offline candidate: usage, evidence and re-run guide
 
 Specification: `M0-v0.1` (docs/milestones/M0-transport-probe). This candidate is
-**offline-only** and is not an M0 acceptance decision. No cloud, Home
-Assistant, real device, public network, OTA or Git publication was performed.
+**offline-only** and is not an M0 acceptance decision. The recorded verification
+did not contact cloud services, Home Assistant or real devices. It does not
+authorize OTA, public deployment or Git publication. See [reconciliation.md](reconciliation.md)
+for the fixed `4421991` evidence and the separate uncommitted report-tool changes.
 
 ## Prerequisites
 
@@ -33,6 +35,13 @@ make verify-m0      # gofmt + go vet + go test -race + report validation + snaps
 
 It exits non-zero if any of A01-A28 has no passing named test, any package or
 test fails, or a required test is skipped. There is no "skip = pass" path.
+
+When preserving an earlier fixed-candidate run, use a separate output directory,
+for example `make verify-m0 EVIDENCE=/tmp/homevoice-m0-rerun`. A report generated
+from a dirty tree verifies those changes above HEAD, not the commit alone.
+Metadata status is collected before writing reports; the snapshot is collected
+afterward and may additionally list generated report changes. Neither status is
+filtered to conceal authored document or source changes.
 
 Run one acceptance family directly, for example:
 
@@ -191,8 +200,8 @@ not be recorded as passed until implemented and run with explicit authorization.
 ## Re-run for independent acceptance
 
 1. Fresh workspace checkout/clone of this repository at the fixed candidate
-   (working tree, branch `feature/m0-transport-probe`; no commit/push was
-   authorized). Verify `evidence/snapshot/git-head.txt`,
+   (branch `feature/m0-transport-probe`; current fixed HEAD is recorded in the
+   evidence). Verify `evidence/snapshot/git-head.txt`,
    `git-branch.txt`, `git-status.txt`, and `sha256.txt`.
 2. `make check-deps`; confirm Go/libopus versions match the report.
 3. `make verify-m0`; confirm exit 0 and that all A01-A28 are **PASS** in
@@ -207,6 +216,9 @@ not be recorded as passed until implemented and run with explicit authorization.
 - Spec package still says "待批准" (pending approval); the user must confirm the
   approval status. This candidate does not self-approve.
 - Authorized live/hardware workflows are gated but not implemented/validated.
+- Legacy synchronous MCP senders only bound caller waiting; cancellation cannot
+  forcibly stop their underlying send goroutine. In-flight side effects can
+  remain unknown and must not be automatically retried.
 - The conditional T4 HTTPS configuration-distribution endpoint is not
   implemented because the firmware configuration channel is unverified. A
   synthetic loopback HTTPS test-audio server (self-signed test certificate,
@@ -215,4 +227,5 @@ not be recorded as passed until implemented and run with explicit authorization.
   and HTTPS trust remain unverified.
 - Real firmware notify/MCP/TLS/NAT/Opus timing and public-network UDP security
   remain unverified and must be resolved before M1/公网.
-- No commit/push/PR/OTA/deployment was performed.
+- The recorded offline verification grants no Git publication, OTA, deployment,
+  cloud-call or real-device-operation authorization.

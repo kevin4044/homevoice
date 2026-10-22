@@ -160,6 +160,9 @@ func Build(events []TestEvent, meta Metadata) (*Report, error) {
 	if meta.FixtureSHA256 == nil {
 		meta.FixtureSHA256 = map[string]string{}
 	}
+	if meta.ApprovalNote == "" {
+		meta.ApprovalNote = candidateApprovalNote(meta.WorkingTree)
+	}
 
 	failures := map[string]bool{}
 	failedTests := map[string]testResult{}
@@ -289,6 +292,19 @@ func unique(in []string) []string {
 		}
 	}
 	return out
+}
+
+func candidateApprovalNote(workingTree string) string {
+	note := "Approval note: the specification package still records status \"待批准\" (pending approval) in its README/spec/acceptance/handoff. The specification owner/referee must confirm approval. "
+	switch {
+	case workingTree == "clean":
+		note += "This report describes the committed HEAD shown above with a clean worktree at metadata collection."
+	case strings.HasPrefix(workingTree, "dirty"):
+		note += "This report includes uncommitted changes on top of the recorded HEAD; it is not evidence for that commit alone."
+	default:
+		note += "Worktree status is unknown; this report cannot establish a clean fixed candidate."
+	}
+	return note + " Offline verification does not authorize Git publication, live/hardware operations, deployment or OTA."
 }
 
 func blockedEnv(prefix string, n int, reason string) []EnvRow {
@@ -446,8 +462,9 @@ func defaultLimits() []string {
 
 func defaultKnownIssues() []string {
 	return []string{
-		"The specification package still records status \"pending approval\" (待批准) in README/spec/acceptance/handoff. This coding run was authorized by the user's direct offline-implementation instruction; approval must be confirmed by the specification owner/referee and is not self-declared here.",
-		"No commit/push/PR was authorized, so the candidate is the uncommitted working tree; see snapshot/ for HEAD, branch, dirty status and file hashes.",
+		"The specification package still records status \"pending approval\" (待批准) in README/spec/acceptance/handoff. Approval must be confirmed by the specification owner/referee; the offline report does not self-approve M0.",
+		"The candidate identity is the recorded HEAD together with its worktree status and snapshot. A dirty worktree result must not be presented as verification of the recorded commit alone.",
+		"Legacy synchronous MCP senders only bound caller waiting on cancellation/deadline; their underlying send goroutine cannot be forcibly stopped and may continue executing. Context-aware senders support cooperative cancellation. Already published or in-flight side effects can have an unknown outcome and must not be automatically retried.",
 		"Live cloud, remote MCP endpoint and real hardware were not executed; L01-L03 and H01-H06 remain BLOCKED. Firmware notify, device MCP, TLS, NAT and Opus timing therefore remain assumptions for M1 planning.",
 		"The authorized live/hardware entry points currently validate authorization/config and then report BLOCKED; their actual L01-L03 / H01-H06 workflows are not implemented or validated in this candidate. They must not be recorded as pass until those workflows are implemented and exercised with authorization.",
 		"The conditional T4 synthetic HTTPS configuration-distribution endpoint was not implemented because the target firmware configuration channel is unverified. A synthetic loopback HTTPS test-audio server (self-signed, certificate-pinned client) exists in the simulator for offline media tests, but real firmware notification download, media format and HTTPS trust remain untested on hardware.",
