@@ -145,6 +145,7 @@ type deviceState struct {
 	playing        bool
 	playToken      uint64
 	playCancel     context.CancelFunc
+	pipelineToken  uint64
 	pipelineCancel context.CancelFunc
 	pipelineBusy   bool
 
@@ -857,48 +858,51 @@ func (p *Probe) stopListening(deviceID string, generation uint64) {
 		_ = st.decoder.Close()
 		st.decoder = nil
 	}
-	st.pipelineBusy = true
-	p.mu.Unlock()
 	if p.up == nil || len(pcm) == 0 {
-		p.mu.Lock()
-		if st2 := p.states[deviceID]; st2 != nil {
-			st2.pipelineBusy = false
-		}
+		st.pipelineBusy = false
 		p.mu.Unlock()
 		return
 	}
+	// Establish round ownership while holding the state lock, so a later
+	// abort/goodbye/HELLO can cancel this exact pipeline before its goroutine
+	// starts. A monotonic token prevents a superseded round's late exit from
+	// clearing a newer round's busy state.
+	pipelineCtx, pipelineCancel := context.WithCancel(p.ctx)
+	st.pipelineToken++
+	token := st.pipelineToken
+	st.pipelineCancel = pipelineCancel
+	st.pipelineBusy = true
+	sessionID := st.sessionID
+	p.mu.Unlock()
 	if p.tasks.Add() {
 		go func() {
 			defer p.tasks.Done()
-			p.runPipeline(deviceID, generation, pcm)
+			p.runPipeline(pipelineCtx, deviceID, generation, token, sessionID, pcm)
 		}()
 	} else {
-		p.mu.Lock()
-		if st2 := p.states[deviceID]; st2 != nil {
-			st2.pipelineBusy = false
-		}
-		p.mu.Unlock()
+		pipelineCancel()
+		p.finishPipeline(deviceID, token)
 	}
 }
 
-func (p *Probe) runPipeline(deviceID string, generation uint64, pcm []int16) {
-	defer func() {
-		p.mu.Lock()
-		if st := p.states[deviceID]; st != nil && st.generation == generation {
-			st.pipelineBusy = false
-		}
-		p.mu.Unlock()
-	}()
-	base, cancel := context.WithTimeout(p.ctx, limits.UpstreamOpMax)
-	defer cancel()
+// finishPipeline clears a pipeline round's busy state only when its token is
+// still current. A canceled round that exits late must not clear a newer
+// round's busy state or cancel handle.
+func (p *Probe) finishPipeline(deviceID string, token uint64) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	st := p.states[deviceID]
-	var sessionID string
-	if st != nil {
-		sessionID = st.sessionID
-		st.pipelineCancel = cancel
+	if st == nil || st.pipelineToken != token {
+		return
 	}
-	p.mu.Unlock()
+	st.pipelineBusy = false
+	st.pipelineCancel = nil
+}
+
+func (p *Probe) runPipeline(roundCtx context.Context, deviceID string, generation uint64, token uint64, sessionID string, pcm []int16) {
+	defer p.finishPipeline(deviceID, token)
+	base, cancel := context.WithTimeout(roundCtx, limits.UpstreamOpMax)
+	defer cancel()
 	ctx := base
 	text, err := p.up.Transcribe(ctx, pcm)
 	if err != nil {
